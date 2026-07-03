@@ -1,0 +1,2 @@
+CREATE CONSTRAINT concept_id_unique IF NOT EXISTS
+FOR (o:Concept) REQUIRE o.id IS UNIQUE

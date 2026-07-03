@@ -1,0 +1,14 @@
+# Core pipeline
+numpy>=1.24
+networkx>=3.0
+scikit-learn>=1.3
+
+# Text ingestion and chunking
+wikipedia>=1.4
+langchain-text-splitters>=0.2
+
+# Embeddings (installs torch transitively)
+sentence-transformers>=2.2
+
+# Graph database
+neo4j>=5.0

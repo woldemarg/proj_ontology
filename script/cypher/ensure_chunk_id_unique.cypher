@@ -1,0 +1,2 @@
+CREATE CONSTRAINT chunk_id_unique IF NOT EXISTS
+FOR (c:Chunk) REQUIRE c.id IS UNIQUE

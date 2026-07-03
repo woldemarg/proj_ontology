@@ -1,0 +1,3 @@
+MATCH (n)
+WITH n LIMIT $batch_size
+DETACH DELETE n
