@@ -36,6 +36,13 @@ def _env_float(key: str, default: float) -> float:
     return float(os.environ.get(key, str(default)))
 
 
+def _env_bool(key: str, default: bool) -> bool:
+    raw = os.environ.get(key)
+    if raw is None:
+        return default
+    return raw.strip().lower() in {"1", "true", "yes", "on"}
+
+
 @dataclass(frozen=True, slots=True)
 class Settings:
     # Neo4j
@@ -76,6 +83,11 @@ class Settings:
     chunks_cache_file: str
     embeddings_cache_file: str
     embed_manifest_file: str
+
+    # Visualisation (optional artifacts under data/visualisation/)
+    keep_visual_artifacts: bool
+    draw_edges: bool
+    edge_auto_disable_chunk_threshold: int
 
 
 def load_settings(env_file: Path | None = None) -> Settings:
@@ -122,4 +134,9 @@ def load_settings(env_file: Path | None = None) -> Settings:
         chunks_cache_file=_env_str("CHUNKS_CACHE_FILE", "chunks.json"),
         embeddings_cache_file=_env_str("EMBEDDINGS_CACHE_FILE", "embeddings.npy"),
         embed_manifest_file=_env_str("EMBED_MANIFEST_FILE", "embed_manifest.json"),
+        keep_visual_artifacts=_env_bool("KEEP_VISUAL_ARTIFACTS", False),
+        draw_edges=_env_bool("DRAW_EDGES", True),
+        edge_auto_disable_chunk_threshold=_env_int(
+            "EDGE_AUTO_DISABLE_CHUNK_THRESHOLD", 5000
+        ),
     )

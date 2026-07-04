@@ -36,6 +36,10 @@ def data_cache_dir() -> Path:
     return resolve_project_root() / "data" / "cache"
 
 
+def visualisation_artifacts_dir() -> Path:
+    return resolve_project_root() / "data" / "visualisation" / "artifacts"
+
+
 def cypher_dir() -> Path:
     override = os.environ.get("ONTOLOGY_CYPHER_DIR")
     if override:

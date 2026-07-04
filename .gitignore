@@ -1,0 +1,49 @@
+# Secrets and local config
+.env
+.env.local
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.eggs/
+dist/
+build/
+.venv/
+venv/
+env/
+
+# IDE / editor
+.idea/
+.vscode/
+.spyproject/
+*.swp
+*.swo
+
+# Pipeline artifacts (rebuilt on first run)
+data/cache/*
+!data/cache/.gitkeep
+!data/.gitkeep
+
+# Downloaded embedding models (re-fetched on first run)
+models/sentence-transformers/*
+!models/.gitkeep
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Ad-hoc plot exports
+iframe_figures/
+
+# Local visualisation outputs (rebuilt when KEEP_VISUAL_ARTIFACTS=true)
+data/visualisation/artifacts/*
+!data/visualisation/artifacts/.gitkeep
+data/visualisation/*.html
+
+# Local experiments (not part of published repo)
+_odds/

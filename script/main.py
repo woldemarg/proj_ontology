@@ -10,14 +10,14 @@ _SCRIPT_DIR = Path(__file__).resolve().parent
 if str(_SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(_SCRIPT_DIR))
 
-from ontology import (  # noqa: E402
-    Neo4jOntologyPublisher,
-    OntologyGraph,
+from ontology.neo4j_uploader import Neo4jOntologyPublisher, OntologyGraph  # noqa: E402
+from ontology.pipeline import (  # noqa: E402
     build_ontology_graph,
     load_or_embed_chunks,
     load_or_fetch_articles,
-    load_settings,
+    save_visual_artifacts,
 )
+from ontology.settings import load_settings  # noqa: E402
 
 # %%
 settings = load_settings()
@@ -34,7 +34,17 @@ def run_pipeline(*, force_refresh: bool = False) -> None:
         concept_nodes,
         similarity_edges,
         hierarchy_edges,
+        concept_embeddings,
     ) = build_ontology_graph(embeddings, settings)
+
+    save_visual_artifacts(
+        settings,
+        concept_embeddings,
+        concept_nodes,
+        activation_edges,
+        num_chunks=len(embeddings),
+        embedding_dim=int(embeddings.shape[1]),
+    )
 
     Neo4jOntologyPublisher(settings).publish(
         OntologyGraph(

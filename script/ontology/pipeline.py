@@ -6,6 +6,7 @@ import hashlib
 import json
 import re
 import time
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -17,8 +18,9 @@ from sentence_transformers import SentenceTransformer
 from sklearn.decomposition import MiniBatchDictionaryLearning
 from sklearn.metrics.pairwise import cosine_similarity
 
-from ontology.paths import data_cache_dir, model_cache_dir
+from ontology.paths import data_cache_dir, model_cache_dir, visualisation_artifacts_dir
 from ontology.settings import Settings
+
 
 WIKIPEDIA_TOPICS = [
     "Quantum computing",
@@ -258,6 +260,7 @@ def build_ontology_graph(
     list[dict[str, Any]],
     list[dict[str, Any]],
     list[dict[str, Any]],
+    np.ndarray,
 ]:
     """Extract concept nodes and relationships from chunk embeddings."""
     print("\n--- Extracting ontology graph ---")
@@ -463,4 +466,47 @@ def build_ontology_graph(
                 )
 
     all_concept_nodes = concept_nodes + super_concept_nodes
-    return activation_edges, all_concept_nodes, similarity_edges, hierarchy_edges
+    return (
+        activation_edges,
+        all_concept_nodes,
+        similarity_edges,
+        hierarchy_edges,
+        concept_embeddings,
+    )
+
+
+def save_visual_artifacts(
+    settings: Settings,
+    concept_embeddings: np.ndarray,
+    concept_nodes: list[dict[str, Any]],
+    activation_edges: list[dict[str, Any]],
+    *,
+    num_chunks: int,
+    embedding_dim: int,
+) -> None:
+    """Write L0 arrays and metadata for script/visualisation/plot_ontology_sphere.py."""
+    if not settings.keep_visual_artifacts:
+        return
+
+    output_dir = visualisation_artifacts_dir()
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    l0_concepts = [node for node in concept_nodes if node.get("level") == 0]
+    np.save(output_dir / "concept_embeddings.npy", concept_embeddings)
+    with (output_dir / "concepts.json").open("w", encoding="utf-8") as f:
+        json.dump(l0_concepts, f, indent=2)
+    with (output_dir / "activations.json").open("w", encoding="utf-8") as f:
+        json.dump(activation_edges, f, indent=2)
+    with (output_dir / "manifest.json").open("w", encoding="utf-8") as f:
+        json.dump(
+            {
+                "created_at": datetime.now(timezone.utc).isoformat(),
+                "num_chunks": num_chunks,
+                "embedding_dim": embedding_dim,
+                "num_concepts_l0": len(l0_concepts),
+                "num_activations": len(activation_edges),
+            },
+            f,
+            indent=2,
+        )
+    print(f"Visualisation artifacts saved → {output_dir.resolve()}")

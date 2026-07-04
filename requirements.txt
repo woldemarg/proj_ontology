@@ -12,3 +12,8 @@ sentence-transformers>=2.2
 
 # Graph database
 neo4j>=5.0
+
+# Visualisation (prosphera sphere plot)
+prosphera>=1.0.5
+plotly>=5.0
+seaborn>=0.13

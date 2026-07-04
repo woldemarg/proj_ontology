@@ -20,7 +20,7 @@ pip install -r requirements.txt
 cp .env.sample .env
 ```
 
-Edit `.env` with your Neo4j credentials (`NEO4J_URI`, `NEO4J_USER`, `NEO4J_PASSWORD`, `NEO4J_DATABASE`). Tuning knobs (`CONCEPTS_PER_CHUNK`, `RELATED_TO_PEER_COUNT`, chunk size, K-sweep bounds) are documented in `.env.sample`.
+Edit `.env` with your Neo4j credentials (`NEO4J_URI`, `NEO4J_USER`, `NEO4J_PASSWORD`, `NEO4J_DATABASE`). Tuning knobs (`CONCEPTS_PER_CHUNK`, `RELATED_TO_PEER_COUNT`, `KEEP_VISUAL_ARTIFACTS`, chunk size, K-sweep bounds) are documented in `.env.sample`.
 
 **3. Run the Pipeline**
 
@@ -32,6 +32,14 @@ Optional: bypass caches without deleting `data/cache/`:
 
 ```bash
 python script/main.py --force-refresh
+```
+
+Optional: keep L0 visualisation artifacts (for the sphere plot below):
+
+```bash
+# set KEEP_VISUAL_ARTIFACTS=true in .env, then:
+python script/main.py
+python script/visualisation/plot_ontology_sphere.py -o data/visualisation/ontology_sphere.html
 ```
 
 The script caches articles, chunks, and embeddings in `data/cache/`. Delete that directory (or use `--force-refresh`) to force a full rebuild. The SentenceTransformer model is cached under `models/sentence-transformers/` (not committed — downloaded on first run).
@@ -57,7 +65,7 @@ The pipeline transforms unstructured Wikipedia articles into a structured, 3-tie
 ### Phase 2: Concept Discovery (Sparse Coding)
 
 - **Orthogonal Matching Pursuit (OMP):** Instead of spatial clustering (e.g. K-Means), every chunk is treated as a sparse mixture of latent topics. `MiniBatchDictionaryLearning` with `transform_algorithm="omp"` discovers pure dictionary atoms (Concepts).
-- **Strict sparsity:** OMP assigns exactly `CONCEPTS_PER_CHUNK` non-zero activations per chunk (default **2**).
+- **Strict sparsity:** OMP assigns up to `CONCEPTS_PER_CHUNK` concept activations per chunk (default **2**), keeping only weights above the numerical threshold.
 - **Adaptive sizing:** Sweeps concept count **K** from 20 to 200 in steps of 20, stopping on reconstruction-error plateau and dead-concept penalties. Orphan concepts with zero chunk usage are pruned before graph wiring.
 
 
@@ -117,25 +125,28 @@ LIMIT 500
 
 ### 3. RAG subgraph — multi-hop manifold + coverage-ranked chunks
 
-Builds a focused concept neighborhood, filters hub concepts by `density`, selects up to 10 chunks with the broadest concept coverage, and returns the exact graph slice for context injection.
+> **In plain terms:** Retrieve up to 10 text chunks with the highest concept coverage among highly specific, hub-filtered semantic concepts within a 3-hop `RELATED_TO` neighborhood of the starting topic—preferring longer passages when coverage ties.
+
+Anchors on seed concepts (not raw chunks), expands the manifold with `RELATED_TO*0..3`, drops hub concepts (`density <= 10`), ranks chunks by coverage (then text length), and returns the concept-anchored subgraph for context injection. Requires **Neo4j 5+** (`CALL` subqueries).
 
 ```cypher
-// 0. Entry point: start from specific chunks by id
-MATCH (start_chunk:Chunk)-[:ACTIVATES]->(start_concept:Concept)
-WHERE start_chunk.id IN [105, 65, 300]
+// 0. Anchor Phase: Translate random chunk IDs into stable Seed Concepts
+MATCH (seed_chunk:Chunk)-[:ACTIVATES]->(seed_concept:Concept)
+WHERE seed_chunk.id IN [105, 65, 300]
+// This WITH DISTINCT command severs the query from the random initial chunks.
+// The graph traversal will now originate PURELY from the matched concepts.
+WITH DISTINCT seed_concept
 
-// 1. Expand: traverse the semantic manifold via RELATED_TO
-MATCH (start_concept)-[:RELATED_TO*1..5]-(concept:Concept)
-WITH collect(DISTINCT concept) + collect(DISTINCT start_concept) AS concepts
-UNWIND concepts AS n
+// 1. Expand Phase: Traverse the manifold from the Seed Concepts
+// *0..3 includes the seed_concept at hop 0 — no array concatenation needed.
+MATCH (seed_concept)-[:RELATED_TO*0..3]-(n:Concept)
 WITH DISTINCT n
 
-// 2. Filter concepts: ignore massive hubs to keep context focused
-// Uses the 'density' property calculated during ontology extraction
+// 2. Filter Phase: Drop massive hubs to keep context focused
 WHERE n.density <= 10
 WITH collect(n) AS filtered_concepts
 
-// 3. Select RAG chunks: prefer chunks that cover the most concepts in this neighborhood
+// 3. RAG Selection: Find the highest coverage chunks for this pure concept neighborhood
 CALL {
     WITH filtered_concepts
     UNWIND filtered_concepts AS n
@@ -145,7 +156,7 @@ CALL {
     RETURN collect(DISTINCT chunk)[0..10] AS selected_chunks
 }
 
-// 4. Build concept graph: lateral RELATED_TO edges among filtered concepts
+// 4. Graph Topology: Draw the lateral edges among the filtered concepts
 CALL {
     WITH filtered_concepts
     MATCH (n)-[relation:RELATED_TO]-(peer:Concept)
@@ -153,12 +164,12 @@ CALL {
     RETURN DISTINCT n, relation, peer
 }
 
-// 5. Attach only the selected RAG chunks to the concept graph
+// 5. Final Assembly: Attach the selected RAG chunks to the concept graph
 WITH n, relation, peer, selected_chunks
 UNWIND selected_chunks AS chunk
 MATCH (chunk)-[activation:ACTIVATES]->(n)
 
-// Final subgraph for RAG context
+// Return the clean, concept-anchored subgraph
 RETURN DISTINCT n, relation, peer, chunk, activation
 LIMIT 500
 ```
@@ -194,6 +205,8 @@ proj_ontology/
   README.md
   data/
     cache/             # runtime cache (gitignored except .gitkeep)
+    visualisation/
+      artifacts/       # optional L0 plot inputs when KEEP_VISUAL_ARTIFACTS=true
   models/              # embedding model cache (gitignored except .gitkeep)
   script/
     main.py            # entry point
@@ -202,8 +215,11 @@ proj_ontology/
       queries/         # sample RAG exploration queries (README-aligned)
     ontology/
       settings.py      # .env loader
-      pipeline.py      # ingest, embed, build_ontology_graph
+      pipeline.py      # ingest, embed, build_ontology_graph, save_visual_artifacts
       neo4j_uploader.py
+    visualisation/
+      plot_ontology_sphere.py
+      projector.py
 ```
 
 
@@ -215,6 +231,8 @@ proj_ontology/
 | -------------------------------- | -------------------------------------------------- |
 | `.env`                           | Secrets — copy from `.env.sample`                  |
 | `data/cache/*`                   | Regenerated from Wikipedia on first run (~minutes) |
+| `data/visualisation/artifacts/*` | Written when `KEEP_VISUAL_ARTIFACTS=true`          |
+| `data/visualisation/*.html`      | Sphere plot output                                 |
 | `models/sentence-transformers/*` | Downloaded by SentenceTransformer on first run     |
 
 

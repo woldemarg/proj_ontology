@@ -1,21 +1,23 @@
 // RAG subgraph — multi-hop manifold + coverage-ranked chunks (README query 3)
 // Requires Neo4j 5+ (CALL subqueries). Tune entry ids and n.density threshold as needed.
 
-// 0. Entry point: start from specific chunks by id
-MATCH (start_chunk:Chunk)-[:ACTIVATES]->(start_concept:Concept)
-WHERE start_chunk.id IN [105, 65, 300]
+// 0. Anchor Phase: Translate random chunk IDs into stable Seed Concepts
+MATCH (seed_chunk:Chunk)-[:ACTIVATES]->(seed_concept:Concept)
+WHERE seed_chunk.id IN [105, 65, 300]
+// This WITH DISTINCT command severs the query from the random initial chunks.
+// The graph traversal will now originate PURELY from the matched concepts.
+WITH DISTINCT seed_concept
 
-// 1. Expand: traverse the semantic manifold via RELATED_TO
-MATCH (start_concept)-[:RELATED_TO*1..5]-(concept:Concept)
-WITH collect(DISTINCT concept) + collect(DISTINCT start_concept) AS concepts
-UNWIND concepts AS n
+// 1. Expand Phase: Traverse the manifold from the Seed Concepts
+// *0..3 includes the seed_concept at hop 0 — no array concatenation needed.
+MATCH (seed_concept)-[:RELATED_TO*0..3]-(n:Concept)
 WITH DISTINCT n
 
-// 2. Filter concepts: ignore massive hubs to keep context focused
+// 2. Filter Phase: Drop massive hubs to keep context focused
 WHERE n.density <= 10
 WITH collect(n) AS filtered_concepts
 
-// 3. Select RAG chunks: prefer chunks that cover the most concepts in this neighborhood
+// 3. RAG Selection: Find the highest coverage chunks for this pure concept neighborhood
 CALL {
     WITH filtered_concepts
     UNWIND filtered_concepts AS n
@@ -25,7 +27,7 @@ CALL {
     RETURN collect(DISTINCT chunk)[0..10] AS selected_chunks
 }
 
-// 4. Build concept graph: lateral RELATED_TO edges among filtered concepts
+// 4. Graph Topology: Draw the lateral edges among the filtered concepts
 CALL {
     WITH filtered_concepts
     MATCH (n)-[relation:RELATED_TO]-(peer:Concept)
@@ -33,10 +35,11 @@ CALL {
     RETURN DISTINCT n, relation, peer
 }
 
-// 5. Attach only the selected RAG chunks to the concept graph
+// 5. Final Assembly: Attach the selected RAG chunks to the concept graph
 WITH n, relation, peer, selected_chunks
 UNWIND selected_chunks AS chunk
 MATCH (chunk)-[activation:ACTIVATES]->(n)
 
+// Return the clean, concept-anchored subgraph
 RETURN DISTINCT n, relation, peer, chunk, activation
 LIMIT 500
