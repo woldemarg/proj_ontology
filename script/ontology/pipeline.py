@@ -294,7 +294,7 @@ def build_ontology_graph(
             np.linalg.norm(embeddings - reconstruction, "fro") ** 2 / matrix_norm_sq
         )
 
-        concept_usage = np.sum(coefficients > 0, axis=0)
+        concept_usage = np.sum(np.abs(coefficients) > 1e-5, axis=0)
         dead_concepts = int(np.sum(concept_usage == 0))
         dead_ratio = dead_concepts / k
         improvement = previous_error - reconstruction_error
@@ -341,19 +341,18 @@ def build_ontology_graph(
             "Try lowering CONCEPTS_PER_CHUNK or RECONSTRUCTION_ERROR_TOLERANCE."
         )
 
-    coefficients = best_coefficients
-    dictionary = best_dictionary
+    coefficients_abs = np.abs(best_coefficients)
 
-    concept_usage = np.sum(coefficients > 0, axis=0)
+    concept_usage = np.sum(coefficients_abs > 1e-5, axis=0)
     active_concept_indices = np.where(concept_usage > 0)[0]
     orphan_count = selected_k - len(active_concept_indices)
     if orphan_count:
         print(f"Pruning {orphan_count} orphan concepts before final assignment.")
 
-    coefficients = coefficients[:, active_concept_indices]
-    dictionary = dictionary[active_concept_indices, :]
+    coefficients_abs = coefficients_abs[:, active_concept_indices]
+    dictionary = best_dictionary[active_concept_indices, :]
     concept_count = len(active_concept_indices)
-    chunk_densities = np.sum(coefficients > 0, axis=0)
+    chunk_densities = np.sum(coefficients_abs > 1e-5, axis=0)
 
     print("Extracting pure dictionary atoms as concept embeddings...")
     concept_embeddings = dictionary
@@ -361,22 +360,30 @@ def build_ontology_graph(
     norms[norms == 0] = 1
     concept_embeddings = concept_embeddings / norms
 
-    print(f"Assigning chunks to top-{concepts_per_chunk} concept attractors...")
+    print(
+        f"Assigning chunks to top-{concepts_per_chunk} concept attractors (|weight|)..."
+    )
     activation_edges: list[dict[str, Any]] = []
+    assigned_chunks: set[int] = set()
     for chunk_index in range(len(embeddings)):
-        top_concept_indices = np.argsort(coefficients[chunk_index])[
+        top_concept_indices = np.argsort(coefficients_abs[chunk_index])[
             -concepts_per_chunk:
         ]
         for concept_index in top_concept_indices:
-            weight = coefficients[chunk_index, concept_index]
-            if weight > 0:
+            weight = float(coefficients_abs[chunk_index, concept_index])
+            if weight > 1e-5:
                 activation_edges.append(
                     {
                         "chunk_id": chunk_index,
                         "concept_id": int(concept_index),
-                        "weight": float(weight),
+                        "weight": weight,
                     }
                 )
+                assigned_chunks.add(chunk_index)
+
+    print(
+        f"Sanity check: {len(assigned_chunks)} of {len(embeddings)} chunks connected."
+    )
 
     concept_nodes = [
         {
