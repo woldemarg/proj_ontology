@@ -1,6 +1,7 @@
 # Secrets and local config
 .env
 .env.local
+.env.*.local
 
 # Python
 __pycache__/
@@ -21,12 +22,29 @@ env/
 *.swp
 *.swo
 
-# Pipeline artifacts (rebuilt on first run)
-data/cache/*
-!data/cache/.gitkeep
-!data/.gitkeep
+# v1 pipeline artifacts (rebuilt on first run)
+v1_single_pass/data/cache/*
+!v1_single_pass/data/cache/.gitkeep
+v1_single_pass/data/visualisation/artifacts/*
+!v1_single_pass/data/visualisation/artifacts/.gitkeep
+v1_single_pass/data/visualisation/*.html
+!v1_single_pass/data/visualisation/ontology_sphere.html
+v1_single_pass/logs/*
+!v1_single_pass/logs/.gitkeep
 
-# Downloaded embedding models (re-fetched on first run)
+# v2 orchestrator artifacts
+v2_orchestrator/data/cache/*
+!v2_orchestrator/data/cache/.gitkeep
+v2_orchestrator/data/state/*
+!v2_orchestrator/data/state/.gitkeep
+v2_orchestrator/data/visualisation/artifacts/*
+!v2_orchestrator/data/visualisation/artifacts/.gitkeep
+v2_orchestrator/data/visualisation/*.html
+!v2_orchestrator/data/visualisation/ontology_sphere.html
+v2_orchestrator/logs/*
+!v2_orchestrator/logs/.gitkeep
+
+# Shared embedding model cache (re-fetched on first run)
 models/sentence-transformers/*
 !models/.gitkeep
 
@@ -39,11 +57,15 @@ Thumbs.db
 
 # Ad-hoc plot exports
 iframe_figures/
+docs/assets/__pycache__/
 
-# Local visualisation outputs (rebuilt when KEEP_VISUAL_ARTIFACTS=true)
-data/visualisation/artifacts/*
-!data/visualisation/artifacts/.gitkeep
-data/visualisation/*.html
-
-# Local experiments (not part of published repo)
+# Removed / local-only layouts (do not commit)
 _odds/
+/script/
+/orchestrator/
+/v2_orchestrator/orchestrator/
+*.plan.md
+docs/**/*.plan.md
+
+# Runtime logs at repo root
+*.log

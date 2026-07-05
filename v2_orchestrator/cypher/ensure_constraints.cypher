@@ -1,0 +1,5 @@
+CREATE CONSTRAINT chunk_id_unique IF NOT EXISTS
+FOR (c:Chunk) REQUIRE c.id IS UNIQUE;
+
+CREATE CONSTRAINT concept_id_unique IF NOT EXISTS
+FOR (n:Concept) REQUIRE n.id IS UNIQUE;

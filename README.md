@@ -1,245 +1,318 @@
-# proj_ontology: Autonomous Latent Knowledge Graph
+# proj_ontology
 
-This Proof-of-Concept (POC) builds a machine-readable knowledge graph directly from the geometry of text embeddings. Instead of relying on human labeling or LLM extraction, it uses **sparse dictionary learning (OMP)** to discover latent semantic concepts, wires them into a traversable graph, and publishes the architecture to **Neo4j** for advanced Retrieval-Augmented Generation (RAG).
+**Autonomous latent knowledge graphs from raw text** — no predefined categories, no manual labels.
 
-Entry point: `script/main.py` · Pipeline: `script/ontology/` · Cypher: `script/cypher/`
+This repository ships two complementary products that share embeddings and Cypher patterns but target different workloads:
+
+| Product | Package | Manual | Best for |
+|---------|---------|--------|----------|
+| **v1 — Topological Manifold** | [`v1_single_pass/`](v1_single_pass/) | [`docs/v1-topological-manifold/`](docs/v1-topological-manifold/README.md) | Research — manifold, sphere |
+| **v2 — Latent Semantic Attractor Graph** | [`v2_orchestrator/`](v2_orchestrator/) | [`docs/v2-latent-semantic-attractor-graph/`](docs/v2-latent-semantic-attractor-graph/README.md) | Production — streaming, RAG |
+
+Documentation index: [`docs/README.md`](docs/README.md) · [Contributing](CONTRIBUTING.md) · [Changelog](CHANGELOG.md)
 
 ---
 
-## 🚀 Quick Start
+## Requirements
 
-**1. Prerequisites**
+| Component | Version |
+|-----------|---------|
+| Python | 3.10+ |
+| Neo4j | 5.x (Bolt) |
+| Disk | ~2 GB for embedding model cache (first run) |
 
-- Python 3.10+
-- A running Neo4j instance (Bolt enabled)
-
-**2. Install & Configure**
-
-```bash
+```powershell
 pip install -r requirements.txt
-cp .env.sample .env
+copy .env.sample .env    # set NEO4J_PASSWORD and WIKIPEDIA_USER_AGENT
 ```
-
-Edit `.env` with your Neo4j credentials (`NEO4J_URI`, `NEO4J_USER`, `NEO4J_PASSWORD`, `NEO4J_DATABASE`). Tuning knobs (`CONCEPTS_PER_CHUNK`, `RELATED_TO_PEER_COUNT`, `KEEP_VISUAL_ARTIFACTS`, chunk size, K-sweep bounds) are documented in `.env.sample`.
-
-**3. Run the Pipeline**
-
-```bash
-python script/main.py
-```
-
-Optional: bypass caches without deleting `data/cache/`:
-
-```bash
-python script/main.py --force-refresh
-```
-
-Optional: keep L0 visualisation artifacts (for the sphere plot below):
-
-```bash
-# set KEEP_VISUAL_ARTIFACTS=true in .env, then:
-python script/main.py
-python script/visualisation/plot_ontology_sphere.py -o data/visualisation/ontology_sphere.html
-```
-
-The script caches articles, chunks, and embeddings in `data/cache/`. Delete that directory (or use `--force-refresh`) to force a full rebuild. The SentenceTransformer model is cached under `models/sentence-transformers/` (not committed — downloaded on first run).
-
-Interactive use (Spyder / VS Code): open `script/main.py`, run the `#%%` cells, then call `run_pipeline()`.
 
 ---
 
+## Two architectures
 
+Two approaches share the embedding cache at [`models/`](models/) but differ in memory model, graph lifecycle, and Neo4j write strategy.
 
-## 🧠 Under the Hood (How it Works)
+```mermaid
+flowchart LR
+    subgraph poc ["Topological Manifold"]
+        direction TB
+        T1["Single static batch"] --> T2["In-memory manifold"]
+        T2 --> T3["Frozen graph and sphere viz"]
+    end
 
-The pipeline transforms unstructured Wikipedia articles into a structured, 3-tier graph in four distinct phases:
+    subgraph mvp ["Latent Semantic Attractor Graph"]
+        direction TB
+        S1["Document stream"] --> S2["Disk journal and ConceptStore"]
+        S2 --> S3["Living attractors and MERGE"]
+    end
 
-### Phase 1: Ingestion & Vector Preparation
+    poc -.->|proves theory| mvp
+```
 
-- **Chunking:** Downloads 8 Wikipedia topics (`WIKIPEDIA_TOPICS` in `pipeline.py`) and splits them into 1,024-character chunks with 128-character overlap (defaults: `CHUNK_SIZE`, `CHUNK_OVERLAP`).
-- **Embedding:** Converts chunks into 384-dimensional vectors via `paraphrase-multilingual-MiniLM-L12-v2`.
-- **Anisotropy correction:** Subtracts the mean vector and L2-normalizes each embedding onto the unit sphere so semantic directions spread evenly instead of collapsing into a cone.
+### Visual anchor
 
+Shared Wikipedia topic list ([`corpus/wikipedia_topics.py`](corpus/wikipedia_topics.py)) — **v1 (POC) ingests the first 8 articles** for a fast in-memory run; **v2 (MVP) streams all 40** in batches. Sphere plots show **ACTIVATES** edges (chunk → concept) as faint white lines.
 
+| **v1 — Topological Manifold (8 articles)** | **v2 — Latent Semantic Attractor Graph (40 articles)** |
+|---------------------------------------------|--------------------------------------------------------|
+| ![v1 sphere — prosphera, ACTIVATES edges](docs/assets/mvp-topological-manifold-graph-sphere.png) | ![v2 sphere — prosphera, ACTIVATES edges](docs/assets/mvp-latent-semantic-attractor-graph-sphere.png) |
 
-### Phase 2: Concept Discovery (Sparse Coding)
+Live copies: `v1_single_pass/data/visualisation/ontology_sphere.html` and `v2_orchestrator/data/visualisation/ontology_sphere.html` (v2: pass `--plot` or set `KEEP_VISUAL_ARTIFACTS=true`). Explore the Neo4j graph in [Browser](#neo4j-browser-symbolic-graph).
 
-- **Orthogonal Matching Pursuit (OMP):** Instead of spatial clustering (e.g. K-Means), every chunk is treated as a sparse mixture of latent topics. `MiniBatchDictionaryLearning` with `transform_algorithm="omp"` discovers pure dictionary atoms (Concepts).
-- **Strict sparsity:** OMP assigns up to `CONCEPTS_PER_CHUNK` concept activations per chunk (default **2**), keeping only weights above the numerical threshold.
-- **Adaptive sizing:** Sweeps concept count **K** from 20 to 200 in steps of 20, stopping on reconstruction-error plateau and dead-concept penalties. Orphan concepts with zero chunk usage are pruned before graph wiring.
+### Which product?
 
+| | **v1 — Topological Manifold** | **v2 — Latent Semantic Attractor Graph** |
+|---|-------------------------------|------------------------------------------|
+| **Package** | [`v1_single_pass/`](v1_single_pass/) | [`v2_orchestrator/`](v2_orchestrator/) |
+| **Manual** | [`docs/v1-topological-manifold/`](docs/v1-topological-manifold/README.md) | [`docs/v2-latent-semantic-attractor-graph/`](docs/v2-latent-semantic-attractor-graph/README.md) |
+| **When to use** | Theory, sphere exploration | Production ingest, RAG |
+| **Run model** | One shot, full corpus in RAM | Streaming batches; resume |
+| **Concepts** | Frozen OMP atoms | EMA living attractors |
+| **New data** | Full rebuild | Append batches |
+| **Neo4j DB** | `ontologyv1` | `ontologyv2` |
+| **Hierarchy** | Louvain L1 (`SUPER_CONCEPT_OF`) | L0 only |
+| **`RELATED_TO`** | Top-k cosine per concept | Mutual k-NN |
+| **Wikipedia** | First **8** topics (subset; cached on disk) | Full **40** topics (live fetch per batch) |
+| **Sphere viz** | `python -m v1_single_pass.visualisation.plot_ontology_sphere` | `--plot` → shared sphere script |
 
-
-### Phase 3: Graph Topology
-
-- **Leaves (**`ACTIVATES`**):** Each chunk links to its top winning concepts with weighted `ACTIVATES` edges — chunks are leaf nodes.
-- **Semantic web (**`RELATED_TO`**):** Cosine similarity across concept embeddings; each concept connects to its top `RELATED_TO_PEER_COUNT` peers (default **5**) when similarity exceeds `RELATED_TO_MIN_WEIGHT` (default **0.15**). Pairs are deduplicated so edges are undirected and unique.
-- **Emergent taxonomy (**`SUPER_CONCEPT_OF`**):** Louvain community detection on the `RELATED_TO` graph groups dense neighborhoods into level-1 Super Concepts pointing down to level-0 children.
-
-
-
-### Phase 4: Database Publishing
-
-- Drops existing nodes in batched deletes (`NEO4J_DELETE_BATCH_SIZE`).
-- Creates uniqueness constraints on `Chunk.id` and `Concept.id`.
-- Bulk-loads nodes and relationships via external `UNWIND` Cypher files, sliced by `NEO4J_LOAD_BATCH_SIZE` (default 5,000).
+v1 proves manifold discretization (design framing: SVD → TwoNN → Diffusion → OMP → Kepler Mapper; [implementation mapping](docs/v1-topological-manifold/mathematical-foundations.md#implementation-mapping)). v2 streams living attractors with disk journal and MERGE upserts — [data-flow](docs/v2-latent-semantic-attractor-graph/data-flow.md).
 
 ---
 
-
-
-## 🗺️ Neo4j Schema & Querying
-
-
-| Node Type          | Represents                | Key Edges                            |
-| ------------------ | ------------------------- | ------------------------------------ |
-| `Chunk`            | Raw ground-truth text     | `-[:ACTIVATES]->` Concept            |
-| `Concept` **(L0)** | Dictionary atoms from OMP | `-[:RELATED_TO]-` peer pathways      |
-| `Concept` **(L1)** | Louvain super-concepts    | `-[:SUPER_CONCEPT_OF]->` L0 children |
-
-
-All examples below use the same entry chunk ids: **105, 65, 300**. The same queries are saved under `script/cypher/queries/` for use in Neo4j Browser.
-
-### 1. Lookup — fetch chunks by id
+## Quick start
 
 ```cypher
-MATCH (chunk:Chunk)
-WHERE chunk.id IN [105, 65, 300]
-RETURN chunk
-ORDER BY chunk.id
+CREATE DATABASE ontologyv1 IF NOT EXISTS;
+CREATE DATABASE ontologyv2 IF NOT EXISTS;
 ```
 
+> **Note:** Neo4j rejects underscores in database names on some editions — use `ontologyv1` / `ontologyv2`, not `ontology_v1`.
 
+### A — v1 Topological Manifold
 
-### 2. Local traversal — chunk → concept → peers
-
-```cypher
-MATCH (chunk:Chunk)-[ac:ACTIVATES]->(concept:Concept)
-WHERE chunk.id IN [105, 65, 300]
-MATCH (concept)-[rel:RELATED_TO*1..2]-(peer:Concept)
-RETURN chunk, ac, concept, rel, peer
-LIMIT 500
+```powershell
+$env:NEO4J_DATABASE='ontologyv1'
+$env:KEEP_VISUAL_ARTIFACTS='true'
+python -m v1_single_pass.main
+python -m v1_single_pass.visualisation.plot_ontology_sphere `
+  -o v1_single_pass/data/visualisation/ontology_sphere.html
 ```
 
+Details: [v1 operations — Run locally](docs/v1-topological-manifold/operations.md#run-locally)
 
+### B — v2 Latent Semantic Attractor Graph
 
-### 3. RAG subgraph — multi-hop manifold + coverage-ranked chunks
+```powershell
+$env:NEO4J_DATABASE='ontologyv2'
+$env:KEEP_VISUAL_ARTIFACTS='true'
+python -m v2_orchestrator.main --reset --max-batches 8 --articles-per-batch 5 --plot   # full 40-article corpus
+python -m v2_orchestrator.tests.verify_smoke
+python -m v2_orchestrator.tests.verify_neo4j
+```
 
-> **In plain terms:** Retrieve up to 10 text chunks with the highest concept coverage among highly specific, hub-filtered semantic concepts within a 3-hop `RELATED_TO` neighborhood of the starting topic—preferring longer passages when coverage ties.
+Resume: `python -m v2_orchestrator.main` · Details: [operations.md](docs/v2-latent-semantic-attractor-graph/operations.md)
 
-Anchors on seed concepts (not raw chunks), expands the manifold with `RELATED_TO*0..3`, drops hub concepts (`density <= 10`), ranks chunks by coverage (then text length), and returns the concept-anchored subgraph for context injection. Requires **Neo4j 5+** (`CALL` subqueries).
+---
+
+## Explore the graph interactively
+
+After a pipeline run you can inspect the ontology in two ways — no extra setup beyond the quick starts above.
+
+### 3D semantic sphere (browser)
+
+Both products export a **prosphera** HTML visualisation: chunks and concept attractors on the unit hypersphere, with optional **ACTIVATES** edges (chunk → concept).
+
+| Product | Open in your browser |
+|---------|----------------------|
+| **v1** | `v1_single_pass/data/visualisation/ontology_sphere.html` |
+| **v2** | `v2_orchestrator/data/visualisation/ontology_sphere.html` (written when you pass `--plot` or set `KEEP_VISUAL_ARTIFACTS=true`) |
+
+**What you can do:** rotate and zoom the 3D view; hover nodes for source document, chunk text preview, and concept density; trace how text chunks attach to latent attractors on the manifold.
+
+v1 also supports a standalone export:
+
+```powershell
+python -m v1_single_pass.visualisation.plot_ontology_sphere `
+  -o v1_single_pass/data/visualisation/ontology_sphere.html
+```
+
+Use `--draw-edges` if ACTIVATES lines are hidden on large corpora (see `DRAW_EDGES` in [`.env.sample`](.env.sample)).
+
+### Neo4j Browser (symbolic graph)
+
+Publish loads the same graph into Neo4j for **relationship traversal** and Cypher queries.
+
+1. Open [Neo4j Browser](https://neo4j.com/docs/browser-manual/) (or Desktop).
+2. Select the database you loaded: `:use ontologyv1` or `:use ontologyv2`.
+3. Explore visually — e.g. `MATCH (c:Chunk)-[:ACTIVATES]->(n:Concept) RETURN c,n LIMIT 50` — or run the saved queries in [`docs/cypher/queries/`](docs/cypher/queries/README.md).
+
+For production-style retrieval (anchor chunks → concepts → peer neighborhood → ranked context), see [RAG & graph traversal](#rag--graph-traversal) below.
+
+---
+
+## Verification
+
+| Check | Command |
+|-------|---------|
+| v2 offline smoke | `python -m v2_orchestrator.tests.verify_smoke` |
+| v2 Neo4j E2E | `python -m v2_orchestrator.tests.verify_neo4j` |
+| v2 backfill Neo4j from disk | `python -m v2_orchestrator.tests.verify_neo4j --sync` |
+| v1 publish check | Quick start A, then query chunks/concepts in Neo4j Browser |
+
+Full contributor workflow: [CONTRIBUTING.md](CONTRIBUTING.md)
+
+---
+
+## Documentation
+
+| Document | Role |
+|----------|------|
+| [`docs/README.md`](docs/README.md) | **Docs index** — where to find each topic |
+| [`docs/v1-topological-manifold/`](docs/v1-topological-manifold/README.md) | v1 theory, schema, operations |
+| [`docs/v2-latent-semantic-attractor-graph/`](docs/v2-latent-semantic-attractor-graph/README.md) | v2 data flow, tuning, operations |
+| [`v1_single_pass/README.md`](v1_single_pass/README.md) · [`v2_orchestrator/README.md`](v2_orchestrator/README.md) | Package entry points |
+| **This README — [RAG](#rag--graph-traversal)** | Full `rag_subgraph.cypher` (canonical) |
+| [`docs/cypher/queries/`](docs/cypher/queries/README.md) | Saved `.cypher` files |
+| [`.env.sample`](.env.sample) · [`CHANGELOG.md`](CHANGELOG.md) | Config defaults · release history |
+
+---
+
+## Mental model
+
+1. **Chunks** → 384-D embeddings (`paraphrase-multilingual-MiniLM-L12-v2`), centered on a unit hypersphere.
+2. **Concepts** discretize the manifold — frozen OMP atoms (v1) or EMA attractors (v2).
+3. **Edges:** `ACTIVATES` (chunk → concept), `RELATED_TO` (concept ↔ concept). v1 adds `SUPER_CONCEPT_OF` (L1).
+4. **Neo4j** enables RAG traversal — wipe/reload (v1) or MERGE upserts (v2).
+
+---
+
+## Code entry points
+
+| v1 | v2 |
+|----|-----|
+| `python -m v1_single_pass.main` | `python -m v2_orchestrator.main` |
+| [`ontology/pipeline.py`](v1_single_pass/ontology/pipeline.py) | [`storage.py`](v2_orchestrator/storage.py) · [`ontology_engine.py`](v2_orchestrator/ontology_engine.py) |
+
+Module maps: [v1 operations](docs/v1-topological-manifold/operations.md#read-the-code) · [v2 operations](docs/v2-latent-semantic-attractor-graph/operations.md#read-the-code).
+
+**Corpus:** [`corpus/wikipedia_topics.py`](corpus/wikipedia_topics.py) defines **40** topics. **v1 (POC)** uses the first **8** (`WIKIPEDIA_TOPICS[:8]` in [`pipeline.py`](v1_single_pass/ontology/pipeline.py)); **v2 (MVP)** ingests the full list via streaming batches.
+
+---
+
+## Configuration
+
+Knobs in [`.env.sample`](.env.sample). Set `NEO4J_DATABASE` before each run.
+
+| Scope | Where to read |
+|-------|---------------|
+| Shared (embeddings, OMP, chunks) | [`.env.sample`](.env.sample) |
+| v1 (Louvain, artifacts) | [v1 operations](docs/v1-topological-manifold/operations.md) |
+| v2 (EMA, orphans, batches) | [v2 configuration](docs/v2-latent-semantic-attractor-graph/configuration.md) |
+
+**v2 CLI:** `--reset` · `--max-batches N` · `--articles-per-batch N` · `--plot` · `--draw-edges` / `--no-draw-edges`
+
+---
+
+## Neo4j schema (summary)
+
+| Node | Topological Manifold | Latent Semantic Attractor Graph |
+|------|----------------------|----------------------------------|
+| `Chunk` | Text leaves | Text leaves |
+| `Concept` L0 | OMP + `density` | Attractors + `chunk_count` |
+| `Concept` L1 | Louvain (`SUPER_CONCEPT_OF`) | — |
+
+`SUPER_CONCEPT_OF` is **Topological Manifold only**.
+
+---
+
+## RAG & graph traversal
+
+Both products build the same **concept-anchored** structure for retrieval: text chunks activate semantic attractors (`ACTIVATES`), and attractors link laterally (`RELATED_TO`). RAG does not search raw embeddings in Neo4j — it **anchors on chunk ids**, walks the symbolic graph, and ranks peer chunks by shared concept coverage.
+
+```mermaid
+flowchart LR
+    CH[Chunk anchor] -->|ACTIVATES| C0[Seed concept]
+    C0 -->|RELATED_TO| C1[Peer concept]
+    C0 -->|RELATED_TO| C2[Peer concept]
+    C1 -->|ACTIVATES| CH2[Ranked chunk]
+    C2 -->|ACTIVATES| CH3[Ranked chunk]
+```
+
+**Traversal pattern:** `Chunk` → `ACTIVATES` → `Concept` → `RELATED_TO` (0–3 hops) → peer `Concept` → `ACTIVATES` ← `Chunk`
+
+| Step | What you do |
+|------|-------------|
+| 1. Load a graph | `NEO4J_DATABASE=ontologyv2 python -m v2_orchestrator.main` (or `NEO4J_DATABASE=ontologyv1 python -m v1_single_pass.main` for Topological Manifold) |
+| 2. Pick seed chunk ids | From your user query, retrieved hits, or exploration — list ids in Browser (query below) |
+| 3. Run subgraph query | [`rag_subgraph.cypher`](docs/cypher/queries/rag_subgraph.cypher) below — returns concepts, lateral edges, and top coverage chunks for prompt context |
+| 4. Assemble context | `RETURN` rows give `chunk.text` + the concept neighborhood that justified the match |
+
+**Pick real ids** after any ingest (`:use ontologyv2`):
 
 ```cypher
-// 0. Anchor Phase: Translate random chunk IDs into stable Seed Concepts
+MATCH (c:Chunk)
+RETURN c.id, left(c.text, 80) AS preview
+ORDER BY c.id
+LIMIT 20;
+```
+
+Example seeds from a live graph: **`[0, 1, 2]`** — update `WHERE seed_chunk.id IN [...]` to match your anchors.
+
+### Production RAG query — `rag_subgraph.cypher`
+
+This is the **full multi-phase query** (Neo4j 5+). It: (0) maps seed chunks → concepts, (1) expands the manifold, (2) drops hub concepts, (3) ranks chunks by concept coverage, (4) returns lateral `RELATED_TO` topology, (5) assembles chunk + concept subgraph for visualization or context packing.
+
+Saved copy: [`docs/cypher/queries/rag_subgraph.cypher`](docs/cypher/queries/rag_subgraph.cypher)
+
+```cypher
+// RAG subgraph — multi-hop manifold + coverage-ranked chunks
+// Requires Neo4j 5+ (CALL subqueries with imported variables). Tune entry chunk ids.
+
+// 0. Anchor Phase: Translate chunk IDs into stable Seed Concepts
 MATCH (seed_chunk:Chunk)-[:ACTIVATES]->(seed_concept:Concept)
-WHERE seed_chunk.id IN [105, 65, 300]
-// This WITH DISTINCT command severs the query from the random initial chunks.
-// The graph traversal will now originate PURELY from the matched concepts.
+WHERE seed_chunk.id IN [0, 1, 2]
 WITH DISTINCT seed_concept
 
 // 1. Expand Phase: Traverse the manifold from the Seed Concepts
-// *0..3 includes the seed_concept at hop 0 — no array concatenation needed.
 MATCH (seed_concept)-[:RELATED_TO*0..3]-(n:Concept)
 WITH DISTINCT n
 
 // 2. Filter Phase: Drop massive hubs to keep context focused
-WHERE n.density <= 10
+WHERE count { (n)-[:RELATED_TO]-() } <= 10
 WITH collect(n) AS filtered_concepts
 
-// 3. RAG Selection: Find the highest coverage chunks for this pure concept neighborhood
-CALL {
-    WITH filtered_concepts
+// 3. RAG Selection: Highest-coverage chunks in the concept neighborhood
+CALL (filtered_concepts) {
     UNWIND filtered_concepts AS n
     MATCH (chunk:Chunk)-[:ACTIVATES]->(n)
     WITH chunk, count(DISTINCT n) AS coverage
-    ORDER BY coverage DESC, size(chunk.text) DESC
+    ORDER BY coverage DESC, coalesce(size(chunk.text), 0) DESC
     RETURN collect(DISTINCT chunk)[0..10] AS selected_chunks
 }
 
-// 4. Graph Topology: Draw the lateral edges among the filtered concepts
-CALL {
-    WITH filtered_concepts
+// 4. Graph Topology: Lateral edges among filtered concepts
+CALL (filtered_concepts) {
+    UNWIND filtered_concepts AS n
     MATCH (n)-[relation:RELATED_TO]-(peer:Concept)
     WHERE peer IN filtered_concepts
     RETURN DISTINCT n, relation, peer
 }
 
-// 5. Final Assembly: Attach the selected RAG chunks to the concept graph
+// 5. Final Assembly: Attach ranked RAG chunks to the concept graph
 WITH n, relation, peer, selected_chunks
 UNWIND selected_chunks AS chunk
 MATCH (chunk)-[activation:ACTIVATES]->(n)
 
-// Return the clean, concept-anchored subgraph
 RETURN DISTINCT n, relation, peer, chunk, activation
 LIMIT 500
 ```
 
----
+**Using the result:** each `chunk` row is a candidate context passage; `coverage` is implicit in selection order (step 3). `n`, `relation`, and `peer` define the **explainable** concept neighborhood — useful for GraphRAG-style citations (“retrieved because shared concept X with your anchor”).
 
-
-
-## 🚧 POC Limitations & Scaling Roadmap
-
-This architecture is stable and performant for roughly **10,000 chunks** and a few hundred concepts. Beyond that, the OMP manifold and in-Python graph steps hit structural ceilings. Production scale (~50,000+ chunks) needs the shifts below.
-
-
-| Component               | Current POC limitation                                                                           | Production direction                                                                                                         |
-| ----------------------- | ------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------- |
-| **Peer discovery**      | Dense `cosine_similarity` on concept vectors — O(K^2) today; O(N^2) if moved to chunk-level k-NN | **ANN** libraries (FAISS, hnswlib, Annoy) for O(N \log N) top-k search                                                       |
-| **Community detection** | NetworkX Louvain in Python memory (degrades past ~5,000+ dense nodes)                            | **Neo4j Graph Data Science (GDS)** — Leiden/Louvain on the stored graph                                                      |
-| **Data ingestion**      | Full drop and rebuild on every `run_pipeline()` call                                             | **Streaming ingestion** — map new chunks to existing concepts or spawn nodes incrementally                                   |
-| **Concept extraction**  | OMP K-sweep over the full embedding matrix scales poorly                                         | **Pure geometry** — mutual k-NN on chunk embeddings → Leiden/Louvain centroids                                             |
-
+Shorter building blocks: [saved queries](docs/cypher/queries/README.md) (`lookup_chunks_by_id`, `local_traversal`).
 
 ---
-
-
 
 ## Repository layout
 
-```
-proj_ontology/
-  .env.sample          # copy to .env — all tunables documented
-  .gitignore
-  requirements.txt
-  README.md
-  data/
-    cache/             # runtime cache (gitignored except .gitkeep)
-    visualisation/
-      artifacts/       # optional L0 plot inputs when KEEP_VISUAL_ARTIFACTS=true
-  models/              # embedding model cache (gitignored except .gitkeep)
-  script/
-    main.py            # entry point
-    cypher/
-      *.cypher         # pipeline load queries (used by neo4j_uploader)
-      queries/         # sample RAG exploration queries (README-aligned)
-    ontology/
-      settings.py      # .env loader
-      pipeline.py      # ingest, embed, build_ontology_graph, save_visual_artifacts
-      neo4j_uploader.py
-    visualisation/
-      plot_ontology_sphere.py
-      projector.py
-```
-
-
-
-### What is not in git
-
-
-| Path                             | Reason                                             |
-| -------------------------------- | -------------------------------------------------- |
-| `.env`                           | Secrets — copy from `.env.sample`                  |
-| `data/cache/*`                   | Regenerated from Wikipedia on first run (~minutes) |
-| `data/visualisation/artifacts/*` | Written when `KEEP_VISUAL_ARTIFACTS=true`          |
-| `data/visualisation/*.html`      | Sphere plot output                                 |
-| `models/sentence-transformers/*` | Downloaded by SentenceTransformer on first run     |
-
-
-
-
-### First run expectations
-
-1. `pip install -r requirements.txt` — pulls PyTorch via `sentence-transformers`.
-2. `python script/main.py` — fetches 8 Wikipedia articles, embeds ~1k chunks, runs OMP sweep, publishes to Neo4j.
-3. Open Neo4j Browser and run queries from `script/cypher/queries/`.
+See [`docs/README.md`](docs/README.md) for the full tree. In short: **`docs/`** holds v1/v2 manuals, **`v1_single_pass/`** and **`v2_orchestrator/`** hold runnable code, **`corpus/`** holds the shared 40-topic Wikipedia list (v1 uses 8, v2 uses all 40).
