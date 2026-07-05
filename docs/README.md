@@ -41,7 +41,6 @@ Long-form docs live here, organized by version. Runnable code is in `v1_single_p
 | v2 tuning (`.env`) | [configuration.md](v2-latent-semantic-attractor-graph/configuration.md) |
 | Why v2 exists | [limitations.md](v1-topological-manifold/limitations.md) |
 | RAG Cypher | [Root README — RAG](../README.md#rag--graph-traversal) · [query files](cypher/queries/README.md) |
-| Contribute / verify | [CONTRIBUTING.md](../CONTRIBUTING.md) |
 
 ---
 
@@ -50,7 +49,6 @@ Long-form docs live here, organized by version. Runnable code is in `v1_single_p
 ```
 proj_ontology/
   README.md
-  CONTRIBUTING.md
   CHANGELOG.md
   requirements.txt
   .env.sample

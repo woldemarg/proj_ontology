@@ -9,7 +9,7 @@ This repository ships two complementary products that share embeddings and Cyphe
 | **v1 — Topological Manifold** | [`v1_single_pass/`](v1_single_pass/) | [`docs/v1-topological-manifold/`](docs/v1-topological-manifold/README.md) | Research — manifold, sphere |
 | **v2 — Latent Semantic Attractor Graph** | [`v2_orchestrator/`](v2_orchestrator/) | [`docs/v2-latent-semantic-attractor-graph/`](docs/v2-latent-semantic-attractor-graph/README.md) | Production — streaming, RAG |
 
-Documentation index: [`docs/README.md`](docs/README.md) · [Contributing](CONTRIBUTING.md) · [Changelog](CHANGELOG.md)
+Documentation index: [`docs/README.md`](docs/README.md) · [Changelog](CHANGELOG.md)
 
 ---
 
@@ -158,8 +158,6 @@ For production-style retrieval (anchor chunks → concepts → peer neighborhood
 | v2 Neo4j E2E | `python -m v2_orchestrator.tests.verify_neo4j` |
 | v2 backfill Neo4j from disk | `python -m v2_orchestrator.tests.verify_neo4j --sync` |
 | v1 publish check | Quick start A, then query chunks/concepts in Neo4j Browser |
-
-Full contributor workflow: [CONTRIBUTING.md](CONTRIBUTING.md)
 
 ---
 
